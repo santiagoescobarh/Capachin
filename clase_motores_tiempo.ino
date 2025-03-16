@@ -1,129 +1,164 @@
-#ifndef MOTORES_H
-#define MOTORES_H
+// Definición de pines para Motor A
+#define IN1 15    // Dirección Motor A
+#define IN2 2     // Dirección Motor A
+#define ENA 4     // PWM Motor A (PWM control)
 
-#include <Arduino.h>
-#include <stdint.h>
+// Definición de pines para Motor B
+#define IN3 16    // Dirección Motor B
+#define IN4 17    // Dirección Motor B
+#define ENB 18    // PWM Motor B (PWM control)
 
-// Pines para el puente H (motores de 12V) en ESP32 con 6 pines: 3 para cada motor
+// Configuración para LEDC (PWM en ESP32)
+const int freq = 5000;         // Frecuencia de PWM en Hz
+const int resolution = 8;      // Resolución en bits (0-255)
+const int channelA = 0;        // Canal LEDC para Motor A
+const int channelB = 1;        // Canal LEDC para Motor B
 
-// Motor A (usando pines seguros en ESP32)
-#define PIN_MOTOR_A_PWM   25  // Pin PWM (enable) para controlar la velocidad del motor A
-#define PIN_MOTOR_A_IN1   27  // Pin de dirección 1 del motor A
-#define PIN_MOTOR_A_IN2   26  // Pin de dirección 2 del motor A
-
-// Motor B (usando pines seguros en ESP32)
-#define PIN_MOTOR_B_PWM   32  // Pin PWM (enable) para controlar la velocidad del motor B
-#define PIN_MOTOR_B_IN1   14  // Pin de dirección 1 del motor B
-#define PIN_MOTOR_B_IN2   15  // Pin de dirección 2 del motor B
-
-// Definir una velocidad PWM (valor menor a 255 para no usar la velocidad máxima)
-#define VELOCIDAD 100
-
-class Motores {
-public:
-  Motores();
-  void Adelante();
-  void Atras();               // Nueva función para ir hacia atrás
-  void GirarIzquierda(unsigned long duracion);  
-  void GirarDerecha(unsigned long duracion);
-  void Girar180(unsigned long duracion);
-  void Alto();
+// Clase Motor: encapsula la configuración y control de un motor
+class Motor {
+  private:
+    int _in1;
+    int _in2;
+    int _en;
+    int _channel;
+    int _freq;
+    int _resolution;
+    
+  public:
+    // Constructor
+    Motor(int in1, int in2, int en, int channel, int freq, int resolution) {
+      _in1 = in1;
+      _in2 = in2;
+      _en = en;
+      _channel = channel;
+      _freq = freq;
+      _resolution = resolution;
+    }
+    
+    // Inicializa el pin de control y configura el canal PWM
+    void init() {
+      pinMode(_in1, OUTPUT);
+      pinMode(_in2, OUTPUT);
+      ledcSetup(_channel, _freq, _resolution);
+      ledcAttachPin(_en, _channel);
+    }
+    
+    // Mueve el motor hacia adelante a la velocidad especificada (valor por defecto: 255)
+    void forward(uint8_t speed = 255) {
+      digitalWrite(_in1, HIGH);
+      digitalWrite(_in2, LOW);
+      ledcWrite(_channel, speed);
+    }
+    
+    // Mueve el motor hacia atrás a la velocidad especificada
+    void backward(uint8_t speed = 255) {
+      digitalWrite(_in1, LOW);
+      digitalWrite(_in2, HIGH);
+      ledcWrite(_channel, speed);
+    }
+    
+    // Detiene el motor
+    void stop() {
+      digitalWrite(_in1, LOW);
+      digitalWrite(_in2, LOW);
+      ledcWrite(_channel, 0);
+    }
 };
 
-#endif // MOTORES_H
+// Clase Robot: gestiona dos motores para controlar la dirección general
+class Robot {
+  private:
+    Motor motorA;
+    Motor motorB;
+    
+  public:
+    // Constructor que recibe dos objetos Motor
+    Robot(Motor mA, Motor mB) : motorA(mA), motorB(mB) {}
+    
+    // Inicializa ambos motores
+    void init() {
+      motorA.init();
+      motorB.init();
+    }
+    
+    // Avanza ambos motores
+    void forward(uint8_t speed = 255) {
+      motorA.forward(speed);
+      motorB.forward(speed);
+      Serial.println("Ambos motores avanzando");
+    }
+    
+    // Retrocede ambos motores
+    void backward(uint8_t speed = 255) {
+      motorA.backward(speed);
+      motorB.backward(speed);
+      Serial.println("Ambos motores en reversa");
+    }
+    
+    // Giro a la derecha: motor A hacia adelante y motor B en reversa
+    void turnRight(uint8_t speed = 255) {
+      motorA.forward(speed);
+      motorB.backward(speed);
+      Serial.println("Giro a la derecha");
+    }
+    
+    // Giro a la izquierda: motor A en reversa y motor B hacia adelante
+    void turnLeft(uint8_t speed = 255) {
+      motorA.backward(speed);
+      motorB.forward(speed);
+      Serial.println("Giro a la izquierda");
+    }
+    
+    // Detiene ambos motores
+    void stop() {
+      motorA.stop();
+      motorB.stop();
+      Serial.println("Motores detenidos");
+    }
+};
 
-// --------------------------
-// Implementación de Motores
-// --------------------------
+// Instanciación global del Robot con dos motores
+Robot robot(
+  Motor(IN1, IN2, ENA, channelA, freq, resolution),
+  Motor(IN3, IN4, ENB, channelB, freq, resolution)
+);
 
-Motores::Motores() {
-  // Configurar pines para Motor A
-  pinMode(PIN_MOTOR_A_PWM, OUTPUT);
-  pinMode(PIN_MOTOR_A_IN1, OUTPUT);
-  pinMode(PIN_MOTOR_A_IN2, OUTPUT);
-  
-  // Configurar pines para Motor B
-  pinMode(PIN_MOTOR_B_PWM, OUTPUT);
-  pinMode(PIN_MOTOR_B_IN1, OUTPUT);
-  pinMode(PIN_MOTOR_B_IN2, OUTPUT);
-  
-  Alto();
+void setup() {
+  Serial.begin(115200);
+  robot.init();
+  Serial.println("Comandos: a=Adelante, b=Atrás, c=Derecha, d=Izquierda");
 }
 
-void Motores::Adelante() {
-  // Configurar ambos motores para avanzar:
-  // Motor A: IN1 HIGH, IN2 LOW  
-  // Motor B: IN1 HIGH, IN2 LOW  
-  digitalWrite(PIN_MOTOR_A_IN1, HIGH);
-  digitalWrite(PIN_MOTOR_A_IN2, LOW);
-  digitalWrite(PIN_MOTOR_B_IN1, HIGH);
-  digitalWrite(PIN_MOTOR_B_IN2, LOW);
-  
-  // Aplicar velocidad mediante PWM
-  analogWrite(PIN_MOTOR_A_PWM, VELOCIDAD);
-  analogWrite(PIN_MOTOR_B_PWM, VELOCIDAD);
-}
-
-void Motores::Atras() {
-  // Configurar ambos motores para retroceder:
-  // Motor A: IN1 LOW, IN2 HIGH  
-  // Motor B: IN1 LOW, IN2 HIGH  
-  digitalWrite(PIN_MOTOR_A_IN1, LOW);
-  digitalWrite(PIN_MOTOR_A_IN2, HIGH);
-  digitalWrite(PIN_MOTOR_B_IN1, LOW);
-  digitalWrite(PIN_MOTOR_B_IN2, HIGH);
-  
-  // Aplicar velocidad mediante PWM
-  analogWrite(PIN_MOTOR_A_PWM, VELOCIDAD);
-  analogWrite(PIN_MOTOR_B_PWM, VELOCIDAD);
-}
-
-void Motores::GirarIzquierda(unsigned long duracion) {
-  // Para girar a la izquierda:
-  // Motor A avanza: IN1 HIGH, IN2 LOW  
-  // Motor B retrocede: IN1 LOW, IN2 HIGH
-  digitalWrite(PIN_MOTOR_A_IN1, HIGH);
-  digitalWrite(PIN_MOTOR_A_IN2, LOW);
-  digitalWrite(PIN_MOTOR_B_IN1, LOW);
-  digitalWrite(PIN_MOTOR_B_IN2, HIGH);
-  
-  analogWrite(PIN_MOTOR_A_PWM, VELOCIDAD);
-  analogWrite(PIN_MOTOR_B_PWM, VELOCIDAD);
-  
-  delay(duracion);
-  Alto();
-}
-
-void Motores::GirarDerecha(unsigned long duracion) {
-  // Para girar a la derecha:
-  // Motor A retrocede: IN1 LOW, IN2 HIGH  
-  // Motor B avanza: IN1 HIGH, IN2 LOW
-  digitalWrite(PIN_MOTOR_A_IN1, LOW);
-  digitalWrite(PIN_MOTOR_A_IN2, HIGH);
-  digitalWrite(PIN_MOTOR_B_IN1, HIGH);
-  digitalWrite(PIN_MOTOR_B_IN2, LOW);
-  
-  analogWrite(PIN_MOTOR_A_PWM, VELOCIDAD);
-  analogWrite(PIN_MOTOR_B_PWM, VELOCIDAD);
-  
-  delay(duracion);
-  Alto();
-}
-
-void Motores::Girar180(unsigned long duracion) {
-  // Realiza dos giros de 90° consecutivos para efectuar un giro de 180°
-  GirarDerecha(duracion);
-  delay(150);
-  GirarDerecha(duracion);
-}
-
-void Motores::Alto() {
-  // Detener ambos motores: se apaga la señal PWM y se ponen LOW las señales de dirección
-  analogWrite(PIN_MOTOR_A_PWM, 0);
-  analogWrite(PIN_MOTOR_B_PWM, 0);
-  
-  digitalWrite(PIN_MOTOR_A_IN1, LOW);
-  digitalWrite(PIN_MOTOR_A_IN2, LOW);
-  digitalWrite(PIN_MOTOR_B_IN1, LOW);
-  digitalWrite(PIN_MOTOR_B_IN2, LOW);
+void loop() {
+  if (Serial.available() > 0) {
+    char comando = Serial.read();
+    
+    // Ignorar saltos de línea y retorno de carro
+    if (comando == '\n' || comando == '\r') {
+      return;
+    }
+    
+    switch(comando) {
+      case 'a':  // Avanzar
+        robot.forward();
+        break;
+        
+      case 'b':  // Retroceder
+        robot.backward();
+        break;
+        
+      case 'c':  // Giro a la derecha
+        robot.turnRight();
+        break;
+        
+      case 'd':  // Giro a la izquierda
+        robot.turnLeft();
+        break;
+        
+      default:  // Comando no reconocido: detener motores
+        robot.stop();
+        Serial.println("Comando no reconocido, motores detenidos");
+        break;
+    }
+  }
 }
