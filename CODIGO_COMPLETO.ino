@@ -1,105 +1,140 @@
-#include <Arduino.h>
-#include <Sensores.h>
-#include <Motores.h>
+#include <Wire.h>
+#include "Adafruit_VL53L0X.h"
 
-class RobotController {
-  public:
-    // Constructor: inicializa el estado y el temporizador
-    RobotController() : _estadoActual(Avanzar), _estadoTimer(0) {}
+// Instancias de los sensores
+Adafruit_VL53L0X sensor_frontal = Adafruit_VL53L0X();
+Adafruit_VL53L0X sensor_lateral = Adafruit_VL53L0X();
 
-    // Método de inicialización: configura sensores (y otros si es necesario)
-    void begin() {
-      _sensores.begin();
-      _estadoTimer = millis();
-    }
+// Pines del puente H L298N
+#define ENA 5   // PWM Motor A
+#define IN1 18   // Dirección Motor A
+#define IN2 19   // Dirección Motor A
+#define ENB 25  // PWM Motor B
+#define IN3 4  // Dirección Motor B
+#define IN4 23  // Dirección Motor B
 
-    // Método que se debe llamar en loop() para actualizar el estado del robot
-    void update() {
-      int lecturaIzq    = _sensores.detectarSensor1();
-      int lecturaCentro = _sensores.detectarSensor2();
-      int lecturaDer    = _sensores.detectarSensor3();
+// Pines de control de encendido de los sensores
+#define XSHUT_FRONTAL 32
+#define XSHUT_LATERAL 33
 
-      unsigned long tiempoActual = millis();
-
-      // Si los tres sensores detectan objeto, se cambia a giro de 180°
-      if (lecturaIzq == 1 && lecturaCentro == 1 && lecturaDer == 1) {
-        _estadoActual = Girar_180;
-        _estadoTimer = tiempoActual;
-      }
-
-      switch (_estadoActual) {
-        case Avanzar:
-          if (lecturaCentro == 1) {
-            _motores.Alto();
-            if (lecturaIzq == 1) {
-              _estadoActual = Girar_derecha;
-            } else if (lecturaDer == 1) {
-              _estadoActual = Girar_izquierda;
-            } else {
-              _estadoActual = Girar_derecha;  // Por defecto, gira a la derecha
-            }
-            _estadoTimer = tiempoActual;
-          } else {
-            _motores.Adelante();
-          }
-          break;
-
-        case Girar_izquierda:
-          _motores.GirarIzquierda(_duracionGiro);
-          _estadoActual = Avanzar;
-          _estadoTimer = tiempoActual;
-          break;
-
-        case Girar_derecha:
-          _motores.GirarDerecha(_duracionGiro);
-          _estadoActual = Avanzar;
-          _estadoTimer = tiempoActual;
-          break;
-
-        case Girar_180:
-          _motores.Girar180(2 * _duracionGiro);
-          _estadoActual = Avanzar;
-          _estadoTimer = tiempoActual;
-          break;
-
-        case Parar:
-          _motores.Alto();
-          if (tiempoActual - _estadoTimer >= 500) {
-            _estadoActual = Avanzar;
-            _estadoTimer = tiempoActual;
-          }
-          break;
-      }
-    }
-
-  private:
-    // Instancias de sensores y motores (atributos privados)
-    Sensores _sensores;
-    Motores _motores;
-
-    // Enumeración de estados para el comportamiento del robot
-    enum Estados {
-      Avanzar,
-      Girar_izquierda,
-      Girar_derecha,
-      Girar_180,
-      Parar
-    };
-
-    Estados _estadoActual;
-    unsigned long _estadoTimer;
-    const unsigned long _duracionGiro = 400;  // Duración del giro en milisegundos
-};
-
-// Instancia global del controlador del robot
-RobotController robot;
+// Potencia del motor (0-255)
+int potencia = 150; // Aumentado para notar más el giro
 
 void setup() {
-  Serial.begin(115200);
-  robot.begin();
+    Serial.begin(9600);
+    Serial.println("Iniciando sensores VL53L0X...");
+
+    // Configurar pines del motor
+    pinMode(ENA, OUTPUT);
+    pinMode(IN1, OUTPUT);
+    pinMode(IN2, OUTPUT);
+    pinMode(ENB, OUTPUT);
+    pinMode(IN3, OUTPUT);
+    pinMode(IN4, OUTPUT);
+    
+    // Configurar pines XSHUT de los sensores
+    pinMode(XSHUT_FRONTAL, OUTPUT);
+    pinMode(XSHUT_LATERAL, OUTPUT);
+    
+    Wire.begin();
+    
+    // Apagar ambos sensores antes de inicializar
+    digitalWrite(XSHUT_FRONTAL, LOW);
+    digitalWrite(XSHUT_LATERAL, LOW);
+    delay(10);
+    
+    // Encender e inicializar sensor frontal
+    digitalWrite(XSHUT_FRONTAL, HIGH);
+    delay(10);
+    if (!sensor_frontal.begin(0x30)) {
+        Serial.println("Error al iniciar el sensor frontal");
+    }
+    
+    // Encender e inicializar sensor lateral con dirección diferente
+    digitalWrite(XSHUT_LATERAL, HIGH);
+    delay(10);
+    if (!sensor_lateral.begin(0x31)) {
+        Serial.println("Error al iniciar el sensor lateral");
+    }
 }
 
 void loop() {
-  robot.update();
+    int distancia_frontal = Medir_VL53L0X(sensor_frontal);
+    int distancia_lateral = Medir_VL53L0X(sensor_lateral);
+    
+    Serial.print("Distancia Frontal: "); Serial.println(distancia_frontal);
+    Serial.print("Distancia Lateral: "); Serial.println(distancia_lateral);
+    
+    if (distancia_frontal > 100) {
+        adelante();
+        Serial.println("Avanzando");
+    } else {
+        detener();
+        delay(5);
+        
+        if (distancia_frontal <= 100 && distancia_lateral <= 100) {
+            izquierda();
+            Serial.println("Girando a la izquierda");
+        } else if (distancia_lateral > 100) {
+            derecha();
+            Serial.println("Girando a la derecha");
+        } else {
+            izquierda();
+            Serial.println("Girando a la izquierda");
+        }
+    }
+    delay(5);
+}
+
+float Medir_VL53L0X(Adafruit_VL53L0X &sensor) {
+    VL53L0X_RangingMeasurementData_t medida;
+    sensor.rangingTest(&medida, false);
+    return (medida.RangeStatus != 4) ? medida.RangeMilliMeter : 9999; // 9999 indica fuera de rango
+}
+
+void adelante() {
+    analogWrite(ENA, potencia);
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+    analogWrite(ENB, potencia);
+    digitalWrite(IN3, HIGH);
+    digitalWrite(IN4, LOW);
+}
+
+void atras() {
+    analogWrite(ENA, potencia);
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+    analogWrite(ENB, potencia);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, HIGH);
+}
+
+void izquierda() {
+    analogWrite(ENA, potencia);
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+    analogWrite(ENB, potencia);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, HIGH);
+}
+
+void derecha() {
+    
+    analogWrite(ENA, potencia);
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+    analogWrite(ENB, potencia);
+    digitalWrite(IN3, HIGH);
+    digitalWrite(IN4, LOW);
+}
+
+void detener() {
+    analogWrite(ENA, 0);
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, LOW);
+    analogWrite(ENB, 0);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, LOW);
 }
 
