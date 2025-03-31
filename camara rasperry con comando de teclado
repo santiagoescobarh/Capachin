@@ -1,0 +1,55 @@
+from picamera2 import Picamera2, Preview
+import time
+import os
+
+# Crear instancia de la cámara
+picam2 = Picamera2()
+picam2.configure(picam2.create_still_configuration())
+
+# Carpeta de almacenamiento
+save_path = "./capturas"
+os.makedirs(save_path, exist_ok=True)
+
+print("Controles:")
+print(" - Presiona 'p' para tomar una foto")
+print(" - Presiona 'v' para iniciar/detener grabación de video")
+print(" - Presiona 'q' para salir")
+
+recording = False
+video_filename = ""
+
+try:
+    while True:
+        key = input("Ingrese comando: ")
+        
+        if key == 'p':
+            filename = os.path.join(save_path, f"foto_{int(time.time())}.jpg")
+            picam2.capture_file(filename)
+            print(f"Foto guardada en {filename}")
+        
+        elif key == 'v':
+            if not recording:
+                video_filename = os.path.join(save_path, f"video_{int(time.time())}.h264")
+                picam2.start_recording(video_filename)
+                print(f"Grabando video en {video_filename}")
+                recording = True
+            else:
+                picam2.stop_recording()
+                print(f"Video guardado en {video_filename}")
+                recording = False
+        
+        elif key == 'q':
+            if recording:
+                picam2.stop_recording()
+                print(f"Video guardado en {video_filename}")
+            print("Saliendo...")
+            break
+        
+        else:
+            print("Comando no reconocido")
+
+except KeyboardInterrupt:
+    print("\nInterrupción detectada, cerrando...")
+    if recording:
+        picam2.stop_recording()
+    picam2.close()
