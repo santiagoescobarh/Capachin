@@ -1,0 +1,49 @@
+from picamera2 import Picamera2
+import RPi.GPIO as GPIO
+import time
+
+# Configuración del GPIO
+BUTTON_PIN = 17  # Cambia al número de pin que uses
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+# Configuración de la cámara
+picam2 = Picamera2()
+config = picam2.create_preview_configuration()
+picam2.configure(config)
+picam2.start()
+
+def change_settings():
+    """Cambia la resolución y el efecto de color."""
+    resolutions = [(640, 480), (1280, 720), (1920, 1080)]
+    effects = ['none', 'blackwhite', 'cartoon', 'negative']
+    
+    change_settings.res_index = (change_settings.res_index + 1) % len(resolutions)
+    change_settings.effect_index = (change_settings.effect_index + 1) % len(effects)
+    
+    new_res = resolutions[change_settings.res_index]
+    new_effect = effects[change_settings.effect_index]
+    
+    print(f"Cambiando resolución a {new_res} y efecto a {new_effect}")
+    
+    picam2.stop()
+    config['main']['size'] = new_res
+    config['transform']['colour_effects'] = new_effect
+    picam2.configure(config)
+    picam2.start()
+
+# Índices para alternar entre configuraciones
+change_settings.res_index = 0
+change_settings.effect_index = 0
+
+print("Presiona el botón para cambiar la configuración de la cámara")
+
+try:
+    while True:
+        if GPIO.input(BUTTON_PIN) == GPIO.LOW:
+            change_settings()
+            time.sleep(0.5)  # Pequeña espera para evitar rebotes
+except KeyboardInterrupt:
+    print("Saliendo...")
+    picam2.stop()
+    GPIO.cleanup()
