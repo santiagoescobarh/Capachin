@@ -1,0 +1,52 @@
+from picamera2 import Picamera2
+import time
+import os
+import RPi.GPIO as GPIO
+
+# Configuración de GPIO
+GPIO.setmode(GPIO.BCM)
+BUTTON_PHOTO = 17  # GPIO para tomar fotos
+BUTTON_VIDEO = 27  # GPIO para grabar/detener video
+GPIO.setup(BUTTON_PHOTO, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(BUTTON_VIDEO, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+# Crear instancia de la cámara
+picam2 = Picamera2()
+picam2.configure(picam2.create_still_configuration())
+
+# Carpeta de almacenamiento
+save_path = "./capturas"
+os.makedirs(save_path, exist_ok=True)
+
+print("Presiona el botón de foto para capturar una imagen.")
+print("Presiona el botón de video para iniciar/detener la grabación.")
+
+recording = False
+video_filename = ""
+
+try:
+    while True:
+        if GPIO.input(BUTTON_PHOTO) == GPIO.LOW:
+            filename = os.path.join(save_path, f"foto_{int(time.time())}.jpg")
+            picam2.capture_file(filename)
+            print(f"Foto guardada en {filename}")
+            time.sleep(0.5)  # Pequeño retardo para evitar múltiples capturas
+
+        if GPIO.input(BUTTON_VIDEO) == GPIO.LOW:
+            if not recording:
+                video_filename = os.path.join(save_path, f"video_{int(time.time())}.h264")
+                picam2.start_recording(video_filename)
+                print(f"Grabando video en {video_filename}")
+                recording = True
+            else:
+                picam2.stop_recording()
+                print(f"Video guardado en {video_filename}")
+                recording = False
+            time.sleep(0.5)  # Pequeño retardo para evitar doble detección
+
+except KeyboardInterrupt:
+    print("\nInterrupción detectada, cerrando...")
+    if recording:
+        picam2.stop_recording()
+    picam2.close()
+    GPIO.cleanup()
